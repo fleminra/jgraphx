@@ -7,9 +7,15 @@ package com.mxgraph.io;
 import java.util.Hashtable;
 import java.util.Map;
 
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import com.mxgraph.model.mxCell;
 import com.mxgraph.model.mxCellPath;
@@ -36,9 +42,52 @@ public class mxCodec
 	protected Map<String, Object> objects = new Hashtable<String, Object>();
 
 	/**
+	 * Maps from "id" attribute to Document Node.
+	 */
+	protected Map<String, Node> nodeByIdMap = new Hashtable<String, Node>();
+
+	/**
 	 * Specifies if default values should be encoded. Default is false.
 	 */
 	protected boolean encodeDefaults = false;
+
+	public class ModificationListener
+	  implements org.w3c.dom.events.EventListener
+	{
+	  public ModificationListener()
+	  { }
+
+	  @Override
+	    public void handleEvent(final org.w3c.dom.events.Event event)
+	  {
+	    if (event instanceof org.w3c.dom.events.MutationEvent)
+	     {
+	       final org.w3c.dom.events.MutationEvent mutationEvent = (org.w3c.dom.events.MutationEvent)event;
+
+	       // These are the properties of events I've
+	       // observed. Asserting them here because if events ever
+	       // happen that *don't* match these properties, I make no
+	       // guarantees w.r.t. the id-to-object Hashtable.
+	       assert mutationEvent.getType()	     == org.apache.xerces.dom.events.MutationEventImpl.DOM_SUBTREE_MODIFIED;
+	       assert mutationEvent.getAttrName()    == null;
+	       assert mutationEvent.getNewValue()    == null;
+	       assert mutationEvent.getPrevValue()   == null;
+	       assert mutationEvent.getRelatedNode() == null;
+	       assert mutationEvent.getAttrChange()  == 0;
+
+	       final org.w3c.dom.events.EventTarget target = mutationEvent.getTarget();
+	       final org.w3c.dom.Element targetElement = (org.w3c.dom.Element)target;
+
+	       if (targetElement.getTagName().equals("mxCell"))
+		 {
+		   // assert that this MutationEvent isn't invalidating the ID map
+		   assert nodeByIdMap.get(targetElement.getAttribute("id")) == target;
+		 }
+	     }
+	  }
+	}
+
+	private final ModificationListener modificationListener = new ModificationListener();
 
 	/**
 	 * Constructs an XML encoder/decoder with a new owner document.
@@ -62,6 +111,9 @@ public class mxCodec
 		}
 
 		this.document = document;
+
+		updateNodeByIdMap();
+		((org.w3c.dom.events.EventTarget)document).addEventListener("DOMSubtreeModified", modificationListener, true);
 	}
 
 	/**
@@ -80,6 +132,8 @@ public class mxCodec
 	public void setDocument(Document value)
 	{
 		document = value;
+		nodeByIdMap.clear();
+		updateNodeByIdMap();
 	}
 
 	/**
@@ -190,9 +244,9 @@ public class mxCodec
 	 */
 	public Node getElementById(String id, String attr)
 	{
-		if (attr == null)
+		if (attr == null || attr.equals("id"))
 		{
-			attr = "id";
+                       return nodeByIdMap.get(id);
 		}
 
 		String expr = "//*[@" + attr + "='" + id + "']";
@@ -475,4 +529,20 @@ public class mxCodec
 		}
 	}
 
+       protected void updateNodeByIdMap()
+       {
+	       try
+	       {
+		       XPath xpath = XPathFactory.newInstance().newXPath();
+		       NodeList nodeList = (NodeList)xpath.evaluate("//*[@id]", document, XPathConstants.NODESET);
+		       for (int i=0; i < nodeList.getLength(); i++)
+		       {
+			       nodeByIdMap.put(((Element)(nodeList.item(i))).getAttribute("id"), nodeList.item(i));
+		       }
+	       }
+	       catch (final XPathExpressionException e)
+	       {
+		       e.printStackTrace(); // FIXME: handle this, for completeness, even though it will never happen
+	       }
+       }
 }
