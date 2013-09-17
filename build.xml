@@ -53,6 +53,8 @@
 			debug="${compile.debug}"
 			deprecation="${compile.deprecation}"
 			optimize="${compile.optimize}"
+			source="1.6"
+			target="1.6"
 			destdir="${basedir}/classes">
 			<classpath>
 				<pathelement path="${basedir}/classes"/>
